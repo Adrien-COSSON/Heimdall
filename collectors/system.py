@@ -7,8 +7,3 @@ def get_metrics():
             "ram_memory_percent": psutil.virtual_memory().percent, 
             "disk_usage_percent": psutil.disk_usage("/").percent, 
             "sensor_temp": psutil.sensors_temperatures()}
-
-if __name__ == "__main__":
-    response = send_alert("Heimdall is online 🔱")
-    print(response.status_code)
-    print(response.json())
