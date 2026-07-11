@@ -8,9 +8,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
 
 # Critical variables
-# Temp (for temperature in Celsius degrees)
-# Usage in percentage
-# Polling intervalle in seconds
+# Thresholds (temperatures in Celsius, usage in %, polling in seconds)
 critical_temp_CPU = 90
 critical_temp_harddrive = 60
 max_ram_usage = 95
