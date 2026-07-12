@@ -15,6 +15,8 @@ def check_and_alert():
         send_alert(f"⚠️ Hard Drive usage critical : {current_status['disk_usage_percent']}% for a threshold of {thresholds['max_harddrive_usage']}")
     # TODO: sensor_temp — à implémenter après test sur Ubuntu Server
 
+send_alert("🔱 Heimdall is online")
+
 schedule.every(polling_intervalle).seconds.do(check_and_alert)
 
 while True:
