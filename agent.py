@@ -24,7 +24,10 @@ def check_and_alert():
         send_alert(f"⚠️ RAM usage critical: {current_status['ram_memory_percent']}% for a threshold of {thresholds['max_ram_usage']}")
     if current_status['disk_usage_percent'] > thresholds['max_harddrive_usage']:
         send_alert(f"⚠️ Hard Drive usage critical: {current_status['disk_usage_percent']}% for a threshold of {thresholds['max_harddrive_usage']}")
-    # TODO: sensor_temp — à implémenter après test sur Ubuntu Server
+    if current_status['cpu_temp'] is not None and current_status['cpu_temp'] > thresholds['critical_temp_CPU']:
+        send_alert(f"⚠️ CPU temperature critical: {current_status['cpu_temp']}°C for a threshold of {thresholds['critical_temp_CPU']}")
+    if current_status['nvme_temp'] is not None and current_status['nvme_temp'] > thresholds['critical_temp_harddrive']:
+        send_alert(f"⚠️ NVMe temperature critical: {current_status['nvme_temp']}°C for a threshold of {thresholds['critical_temp_harddrive']}")
 
 send_alert("🔱 Heimdall is online")
 
