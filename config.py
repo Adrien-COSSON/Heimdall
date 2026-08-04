@@ -7,6 +7,9 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
 
+# Trusted IP:
+trusted_ip = os.getenv('TRUSTED_IP')
+
 # Critical variables
 # Thresholds (temperatures in Celsius, usage in %, polling in seconds)
 thresholds = {'critical_temp_CPU': 90,
