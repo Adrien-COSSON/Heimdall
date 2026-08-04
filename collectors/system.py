@@ -16,3 +16,19 @@ def get_metrics():
             'cpu_temp': cpu_temp,
             'nvme_temp': nvme_temp
             }
+
+def get_top_processes():
+    '''
+    Returns the 5 most CPU-intensive processes at the time of the call.
+    Each element is a psutil.Process object with name, cmdline and cpu_percent attributes.
+    '''
+    top_processes = []
+    try:
+        processes = sorted(
+            psutil.process_iter(['name', 'cmdline', 'cpu_percent']), 
+            key=lambda p: p.info['cpu_percent'] or 0,
+            reverse=True)
+        top_processes = processes[:5]
+    except psutil.NoSuchProcess:
+        pass
+    return top_processes

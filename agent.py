@@ -1,10 +1,12 @@
 # Import libraries
 import schedule
 import time
+import threading
 from config import polling_intervalle, thresholds
 from collectors.system import get_metrics
 from collectors.gpu import collect_gpu
 from alerting.telegram import send_alert
+from alerting import listener
 
 def check_and_alert():
     current_status = get_metrics()
@@ -29,6 +31,8 @@ def check_and_alert():
     if current_status['nvme_temp'] is not None and current_status['nvme_temp'] > thresholds['critical_temp_harddrive']:
         send_alert(f"⚠️ NVMe temperature critical: {current_status['nvme_temp']}°C for a threshold of {thresholds['critical_temp_harddrive']}")
 
+# Starting
+threading.Thread(target=listener.start, daemon=True).start()
 send_alert("🔱 Heimdall is online")
 
 schedule.every(polling_intervalle).seconds.do(check_and_alert)
