@@ -1,42 +1,60 @@
 # Import libraries
-import schedule
-import time
+import logging
 import threading
-from config import polling_intervalle, thresholds
-from collectors.system import get_metrics
-from collectors.gpu import collect_gpu
+import time
+from datetime import datetime
+
+import schedule
+
+import config
+from collectors.snapshot import collect_snapshot
+from alerting.alerts import AlertManager
 from alerting.telegram import send_alert
 from alerting import listener
+import exporter
+import ssh_monitor
 
-def check_and_alert():
-    current_status = get_metrics()
-    gpu_status = collect_gpu()
-    if gpu_status is None:
-        pass
-    else:
-        if gpu_status['gpu_temp'] > thresholds['gpu_temp']:
-            send_alert(f"⚠️ GPU temperature critical: {gpu_status['gpu_temp']}°C for a threshold of {thresholds['gpu_temp']}")
-        if gpu_status['gpu_load'] > thresholds['gpu_load']:
-            send_alert(f"⚠️ GPU load critical: {gpu_status['gpu_load']}% for a threshold of {thresholds['gpu_load']}")
-        if gpu_status['gpu_mem_pct'] > thresholds['gpu_mem_pct']:
-            send_alert(f"⚠️ GPU memory use critical: {gpu_status['gpu_mem_pct']}% for a threshold of {thresholds['gpu_mem_pct']}")
-    if current_status['cpu_percent'] > thresholds['max_cpu_usage']:
-        send_alert(f"⚠️ CPU usage critical: {current_status['cpu_percent']}% for a threshold of {thresholds['max_cpu_usage']}")
-    if current_status['ram_memory_percent'] > thresholds['max_ram_usage']:
-        send_alert(f"⚠️ RAM usage critical: {current_status['ram_memory_percent']}% for a threshold of {thresholds['max_ram_usage']}")
-    if current_status['disk_usage_percent'] > thresholds['max_harddrive_usage']:
-        send_alert(f"⚠️ Hard Drive usage critical: {current_status['disk_usage_percent']}% for a threshold of {thresholds['max_harddrive_usage']}")
-    if current_status['cpu_temp'] is not None and current_status['cpu_temp'] > thresholds['critical_temp_CPU']:
-        send_alert(f"⚠️ CPU temperature critical: {current_status['cpu_temp']}°C for a threshold of {thresholds['critical_temp_CPU']}")
-    if current_status['nvme_temp'] is not None and current_status['nvme_temp'] > thresholds['critical_temp_harddrive']:
-        send_alert(f"⚠️ NVMe temperature critical: {current_status['nvme_temp']}°C for a threshold of {thresholds['critical_temp_harddrive']}")
+log = logging.getLogger('heimdall')
 
-# Starting
-threading.Thread(target=listener.start, daemon=True).start()
-send_alert("🔱 Heimdall is online")
 
-schedule.every(polling_intervalle).seconds.do(check_and_alert)
+def run_once(alert_manager):
+    '''
+    One pass: a single measurement used for the alerts, latest.json and history.db.
+    '''
+    snapshot = collect_snapshot(config.thresholds, config.polling_intervalle, config.services)
+    now = datetime.fromisoformat(snapshot['timestamp'])
+    for message in alert_manager.evaluate(snapshot, now):
+        send_alert(message)
+    snapshot['alerts'] = alert_manager.active_alerts()
+    exporter.write_latest(snapshot, config.data_dir)
+    exporter.append_history(snapshot, config.data_dir, config.history_retention_hours)
+    return snapshot
 
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+
+def safe_run(alert_manager):
+    '''
+    An error in one pass is logged and must never kill the loop.
+    '''
+    try:
+        run_once(alert_manager)
+    except Exception:
+        log.exception("Polling pass failed")
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+    alert_manager = AlertManager(config.thresholds, config.alert_reminder_minutes, config.hysteresis)
+
+    threading.Thread(target=listener.start, daemon=True, name='telegram-listener').start()
+    threading.Thread(target=ssh_monitor.monitor, daemon=True, name='ssh-monitor').start()
+    send_alert("🔱 Heimdall is online")
+
+    safe_run(alert_manager)  # first pass right away, so Hermès doesn't wait 60 s
+    schedule.every(config.polling_intervalle).seconds.do(safe_run, alert_manager)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
+if __name__ == '__main__':
+    main()

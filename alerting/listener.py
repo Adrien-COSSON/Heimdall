@@ -1,42 +1,49 @@
 # Import libraries
-from alerting.telegram import send_alert
-from collectors.system import get_metrics, get_top_processes
-from collectors.gpu import collect_gpu
-import requests
+import logging
 import time
-import os
-from dotenv import load_dotenv
-load_dotenv()
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHAT_ID = os.getenv('CHAT_ID')
+import requests
+
+import config
+import exporter
+from alerting.telegram import send_alert
+from collectors.system import get_top_processes
+
+log = logging.getLogger(__name__)
+
+
+def _fmt(value, unit=''):
+    return 'n/a' if value is None else f"{value}{unit}"
+
 
 def format_status():
     '''
-    Collects all system metrics and formats them into a Telegram-ready status message.
-    Returns a formatted string with CPU, RAM, disk, temperatures, GPU, and top processes.
+    Formats the last snapshot written by the agent (latest.json) into a Telegram-ready
+    status message, plus the current top processes. No second measurement.
     '''
-    system_metrics = get_metrics()
-    top_processes = get_top_processes()
-    processes_lines = "\n".join([f"{i+1}. {p.info['name']} — {p.info['cpu_percent']}%" for i, p in enumerate(top_processes)])
-    try:
-        gpu_metrics = collect_gpu()
-    except Exception:
-        gpu_metrics = None
-    if gpu_metrics:
-        gpu_line = f"🎮 GPU: {gpu_metrics['gpu_name']} | {gpu_metrics['gpu_temp']}°C | {gpu_metrics['gpu_load']}% | {gpu_metrics['gpu_mem_used']}MB / {gpu_metrics['gpu_mem_total']}MB ({gpu_metrics['gpu_mem_pct']}%)"
+    snap = exporter.read_latest(config.data_dir)
+    if snap is None:
+        return "📊 Heimdall — pas encore de mesure, réessaie dans une minute."
+    cpu, ram, disk, gpu = snap['cpu'], snap['ram'], snap['disk'], snap.get('gpu')
+    if gpu:
+        gpu_line = (f"🎮 GPU: {gpu['name']} | {_fmt(gpu['temp_c'], '°C')} | {gpu['load_percent']}% | "
+                    f"{gpu['mem_used_mb']}MB / {gpu['mem_total_mb']}MB ({gpu['mem_percent']}%)")
     else:
         gpu_line = "🎮 GPU: indisponible"
-    message = f"""📊 Heimdall — Status
-🖥️ CPU: {system_metrics['cpu_percent']}% | {system_metrics['cpu_temp']}°C
-💾 Disk: {system_metrics['disk_usage_percent']}%
-💿 NVMe: {system_metrics['nvme_temp']}°C
-🧠 RAM: {system_metrics['ram_memory_percent']}%
+    alerts = snap.get('alerts') or []
+    alerts_line = ", ".join(a['metric'] for a in alerts) if alerts else "aucune"
+    processes_lines = "\n".join(f"{i+1}. {p.info['name']} — {p.info['cpu_percent']}%"
+                                for i, p in enumerate(get_top_processes()))
+    return f"""📊 Heimdall — Status ({snap['timestamp'][11:16]})
+🖥️ CPU: {cpu['percent']}% | {_fmt(cpu['temp_c'], '°C')}
+💾 Disk: {disk['percent']}% ({disk['used_gb']} / {disk['total_gb']} Go)
+💿 NVMe: {_fmt(disk['nvme_temp_c'], '°C')}
+🧠 RAM: {ram['percent']}% ({ram['used_gb']} / {ram['total_gb']} Go)
 {gpu_line}
+🚨 Alertes actives: {alerts_line}
 
 ⚙️ Processus:
 {processes_lines}"""
-    return message
 
 
 def handle_message(text):
@@ -49,6 +56,7 @@ def handle_message(text):
     else:
         send_alert("❓ Unknown command. Send status to have a complet review of the server.")
 
+
 def start():
     '''
     Starts the Telegram long polling loop.
@@ -59,7 +67,7 @@ def start():
     while True:
         try:
             response = requests.get(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+                f"https://api.telegram.org/bot{config.BOT_TOKEN}/getUpdates",
                 params={"timeout": 30, "offset": offset}, timeout=35)
             data = response.json()
             for update in data["result"]:
@@ -67,8 +75,8 @@ def start():
                 message = update.get("message", {})
                 chat_id = message.get("chat", {}).get("id")
                 text = message.get("text", "").strip().lower()
-                if str(chat_id) == CHAT_ID:
+                if str(chat_id) == config.CHAT_ID:
                     handle_message(text)
         except Exception:
+            log.exception("Telegram listener error")
             time.sleep(5)
-    
