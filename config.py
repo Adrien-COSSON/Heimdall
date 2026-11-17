@@ -36,7 +36,7 @@ data_dir = os.getenv('HEIMDALL_DATA_DIR', os.path.join(BASE_DIR, 'data'))
 history_retention_hours = 24
 
 # Watched systemd units (use the real unit names, see `systemctl list-units --type=service`)
-services = ["hermes"]
+services = ["hermes", "ollama", "ploutos"]
 
 # SSH monitoring
 auth_log_path = '/var/log/auth.log'
